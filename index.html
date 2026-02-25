@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Contractor DG Panel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body{font-family:Segoe UI;background:#f1f5f9;margin:0}
+header{background:#047857;color:#fff;padding:14px;text-align:center;font-weight:700;font-size:18px}
+.container{max-width:1100px;margin:auto;padding:12px}
+.card{background:#fff;padding:14px;border-radius:12px;margin-bottom:14px;box-shadow:0 4px 12px rgba(0,0,0,.08)}
+.profile{background:#ecfdf5;border-left:5px solid #047857}
+input,select{width:100%;padding:10px;border-radius:8px;border:1px solid #ccc;margin:6px 0}
+button{background:#22c55e;color:#fff;padding:10px;border:none;border-radius:8px;font-weight:700;width:100%;margin-top:10px;cursor:pointer}
+.hidden{display:none}
+table{width:100%;border-collapse:collapse;font-size:14px;margin-top:10px}
+th,td{border:1px solid #e5e7eb;padding:8px;text-align:center}
+th{background:#f0fdf4}
+.history{background:#f0fdf4;border-left:4px solid #22c55e}
+</style>
+</head>
+
+<body>
+
+<header>🚛 CONTRACTOR DG PANEL</header>
+
+<div class="container">
+
+<div id="loginBox" class="card">
+<h3>Contractor Login</h3>
+<input id="user" placeholder="Contractor ID">
+<input id="pass" type="password" placeholder="Password">
+<button onclick="login()">Login</button>
+<div id="msg" style="color:red"></div>
+</div>
+
+<div id="mainBox" class="hidden">
+
+<div id="profileBox" class="card profile"></div>
+
+<h3>🟢 Active Requests</h3>
+<div id="activeData"></div>
+
+<h3>📜 History</h3>
+<div id="historyData"></div>
+
+</div>
+</div>
+
+<script>
+const WEBAPP_URL="https://script.google.com/macros/s/AKfycbyVfX-Y-oTbIcHlgzJJJDVAgtDi_hHUhxaiqObTMunG08jvrcZv458_AzlW1deVNZWZFQ/exec";
+
+/* LOGIN USERS */
+const CONTRACTORS=[
+ {
+  id:"C001", pass:"123",
+  name:"MR. HIREN PATEL",
+  company:"SURESH OIL FIELD",
+  mobile:"9925244229",
+  operators:[
+   {name:"Ramesh Patel", mobile:"9001112233"},
+   {name:"Amit Solanki", mobile:"9001112244"}
+  ]
+ }
+];
+
+let CURRENT_CONTRACTOR=null;
+
+/* LOGIN */
+function login(){
+ let u=CONTRACTORS.find(x=>x.id===user.value && x.pass===pass.value);
+ if(!u){ msg.innerText="❌ Invalid Login"; return; }
+ CURRENT_CONTRACTOR=u;
+ loginBox.classList.add("hidden");
+ mainBox.classList.remove("hidden");
+ profileBox.innerHTML=`<b>${u.name}</b><br>${u.company}<br>${u.mobile}`;
+ loadData();
+}
+
+/* LOAD DATA */
+function loadData(){
+ fetch(`${WEBAPP_URL}?action=contractorApproved&company=${encodeURIComponent(CURRENT_CONTRACTOR.company)}`)
+ .then(r=>r.json())
+ .then(res=>{
+  console.log(res);
+
+  let activeHTML="", historyHTML="";
+
+  res.forEach(req=>{
+    let aRows="", hRows="";
+    let sr=1;
+
+    req.wells.forEach(w=>{
+
+      // ✅ HISTORY ONLY IF DEPLOYED
+      if(w.dgStatus === "DG Deployed"){
+        hRows+=`
+        <tr>
+         <td>${sr++}</td>
+         <td>${w.well}</td>
+         <td>${w.cap}</td>
+         <td>${w.operator||""}</td>
+         <td>${w.operatorMobile||""}</td>
+         <td>${w.dgStart||"NA"}</td>
+         <td>${w.dgStop||"NA"}</td>
+        </tr>`;
+      }
+
+      // ✅ ACTIVE IF NOT DEPLOYED
+      else{
+        let ops=CURRENT_CONTRACTOR.operators.map(o=>`<option value="${o.name}|${o.mobile}">${o.name} (${o.mobile})</option>`).join("");
+        aRows+=`
+        <tr>
+         <td>${sr++}</td>
+         <td>${w.well}</td>
+         <td>${w.cap}</td>
+         <td>
+          <select class="opSelect" data-row="${w.rowId}">
+           <option value="">Select Operator</option>${ops}
+          </select>
+         </td>
+        </tr>`;
+      }
+    });
+
+    if(aRows){
+      activeHTML+=`
+      <div class="card">
+       <h4>Request ID ${req.requestId}</h4>
+       Installation: ${req.installation}<br>
+       Feeder: ${req.feeder}<br><hr>
+       <table><tr><th>Sr</th><th>Well</th><th>Cap</th><th>Operator</th></tr>${aRows}</table>
+       <button onclick="finalSubmit(this)">FINAL SUBMIT</button>
+      </div>`;
+    }
+
+    if(hRows){
+      historyHTML+=`
+      <div class="card history">
+       <h4>Request ID ${req.requestId}</h4>
+       <table>
+       <tr><th>Sr</th><th>Well</th><th>Cap</th><th>Operator</th><th>Mobile</th><th>Start</th><th>Stop</th></tr>
+       ${hRows}
+       </table>
+      </div>`;
+    }
+  });
+
+  activeData.innerHTML = activeHTML || "No Active Requests";
+  historyData.innerHTML = historyHTML || "No History";
+ });
+}
+
+/* FINAL SUBMIT */
+function finalSubmit(btn){
+ const selects = btn.closest(".card").querySelectorAll(".opSelect");
+ let rows=[];
+
+ selects.forEach(s=>{
+  if(!s.value) return;
+  let [n,m]=s.value.split("|");
+  rows.push(s.dataset.row);
+  fetch(`${WEBAPP_URL}?action=assignOperator&rowId=${s.dataset.row}&name=${n}&mobile=${m}`);
+ });
+
+ if(!rows.length){ alert("Select Operator First"); return; }
+
+ // ✅ correct deploy function
+ fetch(`${WEBAPP_URL}?action=contractorDeploy&rows=${encodeURIComponent(JSON.stringify(rows))}`)
+ .then(()=>{ alert("DG DEPLOYED"); loadData(); });
+}
+</script>
+
+</body>
+</html>
